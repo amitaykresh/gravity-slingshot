@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Gravity Slingshot</title>
+<meta name="description" content="A browser gravity puzzle: fling a probe around planets and black holes to reach the target.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='32' r='14' fill='%23ffb35c'/%3E%3Cellipse cx='32' cy='32' rx='28' ry='9' fill='none' stroke='%237fd8ff' stroke-width='4' transform='rotate(-25 32 32)'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #05060d;
+    --panel: rgba(12, 16, 32, 0.86);
+    --line: rgba(140, 170, 255, 0.22);
+    --text: #e8ecff;
+    --muted: #8f9bc4;
+    --accent: #7fd8ff;
+    --good: #5dffb0;
+    --gold: #ffd84d;
+    --bad: #ff6b6b;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text); overflow: hidden;
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  canvas { position: fixed; inset: 0; display: block; touch-action: none; cursor: crosshair; }
+
+  #hud { position: fixed; top: 0; left: 0; right: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 10px 16px; background: linear-gradient(to bottom, rgba(5,6,13,0.95), rgba(5,6,13,0.6));
+    border-bottom: 1px solid var(--line); z-index: 5; }
+  #hud .title { font-weight: 700; letter-spacing: 0.04em; margin-right: 6px; white-space: nowrap; }
+  #hud .title small { color: var(--muted); font-weight: 500; margin-left: 6px; }
+  #hud .stat { color: var(--muted); font-size: 14px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #hud .stat b { color: var(--text); }
+  #hud .spacer { flex: 1; }
+  button { font: inherit; font-size: 14px; color: var(--text); background: rgba(127,216,255,0.08);
+    border: 1px solid var(--line); border-radius: 8px; padding: 6px 12px; cursor: pointer; white-space: nowrap; }
+  button:hover { background: rgba(127,216,255,0.18); border-color: rgba(127,216,255,0.5); }
+  button.on { background: rgba(127,216,255,0.28); border-color: var(--accent); }
+  button.primary { background: var(--accent); color: #04121c; border-color: var(--accent); font-weight: 700; }
+  button.primary:hover { filter: brightness(1.1); }
+  #tools { display: none; gap: 6px; flex-wrap: wrap; }
+  body.sandbox #tools { display: flex; }
+  body.sandbox .levelonly { display: none; }
+  body.menu #hud .ingame { display: none; }
+
+  #panel { position: fixed; inset: 0; display: none; place-items: center; z-index: 10; padding: 16px;
+    background: radial-gradient(ellipse at center, rgba(5,6,13,0.55), rgba(5,6,13,0.85)); }
+  #panel.show { display: grid; }
+  .card { width: min(560px, 100%); max-height: calc(100vh - 32px); overflow: auto; background: var(--panel);
+    border: 1px solid var(--line); border-radius: 16px; padding: 24px; box-shadow: 0 20px 80px rgba(0,0,0,0.6);
+    backdrop-filter: blur(6px); }
+  .card h1 { margin: 0 0 4px; font-size: clamp(28px, 6vw, 40px); letter-spacing: 0.06em;
+    background: linear-gradient(90deg, #ffd27a, #7fd8ff); -webkit-background-clip: text; background-clip: text; color: transparent; }
+  .card h2 { margin: 0 0 8px; font-size: 26px; }
+  .card p { color: var(--muted); line-height: 1.5; margin: 8px 0; }
+  .card .how { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; margin: 14px 0; font-size: 14px; color: var(--muted); }
+  .card .how b { color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin: 14px 0; }
+  .grid button { text-align: left; padding: 10px 12px; }
+  .grid button .n { color: var(--muted); font-size: 12px; display: block; }
+  .stars { color: var(--gold); letter-spacing: 2px; }
+  .stars .off { color: rgba(255,216,77,0.22); }
+  .big-stars { font-size: 44px; text-align: center; margin: 6px 0 10px; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 14px; }
+
+  #toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); max-width: calc(100% - 32px);
+    padding: 10px 16px; border-radius: 10px; background: var(--panel); border: 1px solid var(--line);
+    color: var(--text); font-size: 15px; text-align: center; pointer-events: none; opacity: 0; transition: opacity 0.3s; z-index: 6; }
+  #toast.show { opacity: 1; }
+  kbd { font: 12px ui-monospace, monospace; border: 1px solid var(--line); border-radius: 4px; padding: 1px 5px; color: var(--text); }
+</style>
+</head>
+<body class="menu">
+<canvas id="game"></canvas>
+
+<div id="hud">
+  <span class="title">GRAVITY SLINGSHOT<small id="lvlname"></small></span>
+  <span class="stat ingame levelonly">Shots <b id="shots">0</b></span>
+  <span class="stat ingame levelonly">Best <span id="beststars" class="stars"></span></span>
+  <div id="tools">
+    <button data-tool="launch" class="on" title="Drag to launch probes">🚀 Launch</button>
+    <button data-tool="planet" title="Drag to draw a planet">🪐 Planet</button>
+    <button data-tool="hole" title="Click to drop a black hole">⚫ Black hole</button>
+    <button data-tool="erase" title="Click a body to remove it">✖ Erase</button>
+    <button id="btn-clear">Clear</button>
+  </div>
+  <span class="spacer"></span>
+  <button id="btn-restart" class="ingame levelonly" title="Restart level (R)">↻ Restart</button>
+  <button id="btn-sandbox" title="Sandbox mode (S)">Sandbox</button>
+  <button id="btn-sound" title="Sound on/off (M)">🔊</button>
+  <button id="btn-menu" class="ingame" title="Menu (Esc)">Menu</button>
+</div>
+
+<div id="panel"><div class="card" id="card"></div></div>
+<div id="toast"></div>
+
+<script src="js/physics.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/main.js"></script>
+</body>
+</html>
